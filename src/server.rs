@@ -320,6 +320,18 @@ where
     }
 
     #[cfg(feature = "openssl")]
+    /// Use listener for accepting incoming tls connection requests
+    ///
+    /// This method sets alpn protocols to "http/1.1" only
+    pub fn listen_openssl_force_h1(
+        self,
+        lst: net::TcpListener,
+        builder: SslAcceptorBuilder,
+    ) -> io::Result<Self> {
+        self.listen_ssl_inner(lst, openssl_h1_acceptor(builder)?)
+    }
+
+    #[cfg(feature = "openssl")]
     fn listen_ssl_inner(
         mut self,
         lst: net::TcpListener,
@@ -669,6 +681,24 @@ fn openssl_acceptor(mut builder: SslAcceptorBuilder) -> io::Result<SslAcceptor> 
     });
 
     builder.set_alpn_protos(b"\x08http/1.1\x02h2")?;
+
+    Ok(builder.build())
+}
+
+#[cfg(feature = "openssl")]
+/// Configure `SslAcceptorBuilder` with custom server flags for http/1.1 only.
+fn openssl_h1_acceptor(mut builder: SslAcceptorBuilder) -> io::Result<SslAcceptor> {
+    builder.set_alpn_select_callback(|_, protocols| {
+        const H11: &[u8] = b"\x08http/1.1";
+
+        if protocols.windows(9).any(|window| window == H11) {
+            Ok(b"http/1.1")
+        } else {
+            Err(AlpnError::NOACK)
+        }
+    });
+
+    builder.set_alpn_protos(b"\x08http/1.1")?;
 
     Ok(builder.build())
 }
